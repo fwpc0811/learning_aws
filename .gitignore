@@ -1,1 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+.env
+
+# AWS & Deployment
+.aws-sam/
+packaged.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Custom
 memo/

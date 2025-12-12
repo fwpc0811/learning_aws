@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RDS PostgreSQL Configuration.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: learning-aws
+    Description: Project name prefix.
+
+  DBName:
+    Type: String
+    Default: mydatabase
+    Description: The database name
+
+  DBUser:
+    Type: String
+    Default: postgres
+    Description: The database admin account username
+
+  DBPassword:
+    Type: String
+    Default: password1234
+    NoEcho: true
+    Description: The database admin account password
+
+  NetworkStackName:
+    Type: String
+    Default: learning-aws-vpc-stack
+    Description: Name of the network stack to import values from.
+
+Resources:
+  # ------------------------------------------------------------
+  # Security Group for RDS
+  # ------------------------------------------------------------
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable PostgreSQL access from within the VPC
+      VpcId:
+        Fn::ImportValue: !Sub ${NetworkStackName}-VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-db-sg
+
+  # ------------------------------------------------------------
+  # DB Subnet Group
+  # ------------------------------------------------------------
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - Fn::ImportValue: !Sub ${NetworkStackName}-PrivateSubnetID
+        - Fn::ImportValue: !Sub ${NetworkStackName}-PrivateSubnet2ID
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-db-subnet-group
+
+  # ------------------------------------------------------------
+  # RDS Instance
+  # ------------------------------------------------------------
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub ${ProjectName}-postgres
+      Engine: postgres
+      EngineVersion: "16"
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: "20"
+      StorageType: gp2
+      
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+        
+      # Security & Backups
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 1
+      DeleteAutomatedBackups: true
+      
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-postgres
+
+Outputs:
+  DBEndpoint:
+    Description: The connection endpoint for the database
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-DBEndpoint
+
+  DBPort:
+    Description: The port of the database
+    Value: !GetAtt DBInstance.Endpoint.Port
+    Export:
+      Name: !Sub ${AWS::StackName}-DBPort

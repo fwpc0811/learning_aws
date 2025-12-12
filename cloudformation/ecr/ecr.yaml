@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECR Repository for the application image.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: learning-aws
+    Description: Project name prefix.
+
+Resources:
+  # ------------------------------------------------------------
+  # ECR Repository
+  # ------------------------------------------------------------
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${ProjectName}-repo
+
+      ImageTagMutability: MUTABLE
+
+      ImageScanningConfiguration:
+        ScanOnPush: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-repo
+
+Outputs:
+  RepositoryUri:
+    Description: The URI of the ECR Repository
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub ${AWS::StackName}-RepositoryUri

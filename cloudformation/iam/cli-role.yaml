@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Role for CLI Host to allow CloudFormation and general AWS access.
+
+Resources:
+  # ------------------------------------------------------------
+  # IAM Role
+  # ------------------------------------------------------------
+  CliHostInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # NOTE: Using AdministratorAccess for development convenience.
+        # Use least privilege policy in production.
+        - arn:aws:iam::aws:policy/AdministratorAccess 
+      Tags:
+        - Key: Name
+          Value: cli-host-role
+
+  # ------------------------------------------------------------
+  # Instance Profile (Container to attach role to EC2)
+  # ------------------------------------------------------------
+  CliHostInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref CliHostInstanceRole
+
+Outputs:
+  CliHostInstanceProfileName:
+    Description: Name of the Instance Profile
+    Value: !Ref CliHostInstanceProfile
+    Export:
+      Name: !Sub ${AWS::StackName}-CliHostInstanceProfileName

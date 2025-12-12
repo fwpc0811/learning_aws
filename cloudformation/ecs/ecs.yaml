@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS Fargate Service for API Application.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: learning-aws
+    Description: Project name prefix.
+
+  NetworkStackName:
+    Type: String
+    Default: learning-aws-vpc-stack
+    Description: Name of the network stack to import values from.
+
+  ALBStackName:
+    Type: String
+    Default: learning-aws-alb-stack
+    Description: Name of the ALB stack to import values from.
+  
+  # RDS stack name
+  DBStackName:
+    Type: String
+    Default: learning-aws-db-stack
+    Description: Name of the DB stack to import values from.
+
+  ContainerImage:
+    Type: String
+    Description: The ECR Repository URI
+
+  # DBpassword
+  DBPassword:
+    Type: String
+    Default: password1234
+    NoEcho: true
+
+Resources:
+  # ------------------------------------------------------------
+  # Logs
+  # ------------------------------------------------------------
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ProjectName}-api-log
+      RetentionInDays: 7
+
+  # ------------------------------------------------------------
+  # ECS Cluster
+  # ------------------------------------------------------------
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ProjectName}-cluster
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-cluster
+
+  # ------------------------------------------------------------
+  # Task Definition
+  # ------------------------------------------------------------
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-api-task
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: api-container
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+          Environment:
+            - Name: DB_HOST
+              Value:
+                Fn::ImportValue: !Sub ${DBStackName}-DBEndpoint
+            - Name: DB_NAME
+              Value: mydatabase
+            - Name: DB_USER
+              Value: postgres
+            - Name: DB_PASSWORD
+              Value: !Ref DBPassword
+
+  # ------------------------------------------------------------
+  # IAM Role for Task Execution
+  # ------------------------------------------------------------
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-ecs-task-exec-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-task-exec-role
+
+  # ------------------------------------------------------------
+  # Security Group for ECS Task
+  # ------------------------------------------------------------
+  ECSTaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow traffic from ALB and access to RDS
+      VpcId:
+        Fn::ImportValue: !Sub ${NetworkStackName}-VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId:
+            Fn::ImportValue: !Sub ${ALBStackName}-ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ecs-task-sg
+
+  # ------------------------------------------------------------
+  # ECS Service
+  # ------------------------------------------------------------
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${ProjectName}-api-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - Fn::ImportValue: !Sub ${NetworkStackName}-PrivateSubnetID
+            - Fn::ImportValue: !Sub ${NetworkStackName}-PrivateSubnet2ID
+          SecurityGroups:
+            - !Ref ECSTaskSecurityGroup
+      LoadBalancers:
+        - TargetGroupArn:
+            Fn::ImportValue: !Sub ${ALBStackName}-ALBTargetGroupArn
+          ContainerPort: 80
+          ContainerName: api-container
