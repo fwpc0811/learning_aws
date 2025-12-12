@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bastion Host (EC2) for RDS access.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: learning-aws
+    Description: Project name prefix.
+
+  NetworkStackName:
+    Type: String
+    Default: learning-aws-vpc-stack
+    Description: Name of the network stack to import values from.
+
+  # Specify the name of an existing KeyPair
+  KeyName:
+    Type: String
+    Default: my-key-pair
+    Description: Name of an existing EC2 KeyPair to enable SSH access.
+
+  # Allow SSH access only from this specific IP address
+  AllowedIP:
+    Type: String
+    Description: The IP address range that can be used to SSH to the EC2 instances (e.g., 203.0.113.5/32).
+
+Resources:
+  # ------------------------------------------------------------
+  # Security Group for Bastion
+  # ------------------------------------------------------------
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId:
+        Fn::ImportValue: !Sub ${NetworkStackName}-VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedIP
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-bastion-sg
+
+  # ------------------------------------------------------------
+  # EC2 Instance (Bastion)
+  # ------------------------------------------------------------
+  BastionInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      # Automatically retrieve the latest Amazon Linux 2023 AMI ID
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      KeyName: !Ref KeyName
+      
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          GroupSet: 
+            - !Ref BastionSecurityGroup
+          SubnetId: 
+            Fn::ImportValue: !Sub ${NetworkStackName}-PublicSubnetID
+            
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-bastion
+
+  # ------------------------------------------------------------
+  # Elastic IP
+  # ------------------------------------------------------------
+  BastionEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref BastionInstance
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-bastion-eip
+
+Outputs:
+  BastionPublicIP:
+    Description: Public IP of the Bastion Host
+    Value: !Ref BastionEIP
+    Export:
+      Name: !Sub ${AWS::StackName}-BastionPublicIP

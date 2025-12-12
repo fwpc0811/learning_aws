@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Dedicated CLI Host (EC2) for VS Code Remote SSH.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: learning-aws
+    Description: Project name prefix.
+
+  NetworkStackName:
+    Type: String
+    Default: learning-aws-vpc-stack
+    Description: Name of the network stack to import values from.
+    
+  IamStackName:
+    Type: String
+    Default: learning-aws-iam-stack
+    Description: Name of the IAM stack to import the Instance Profile ARN.
+
+  KeyName:
+    Type: String
+    Default: my-key-pair
+    Description: Name of an existing EC2 KeyPair to enable SSH access.
+
+  AllowedIP:
+    Type: String
+    Description: The IP address range that can be used to SSH to the EC2 instances (e.g., 203.0.113.5/32).
+
+Resources:
+  # ------------------------------------------------------------
+  # Security Group for CLI Host
+  # ------------------------------------------------------------
+  CliHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22 for CLI host
+      VpcId:
+        Fn::ImportValue: !Sub ${NetworkStackName}-VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedIP
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-cli-host-sg
+
+  # ------------------------------------------------------------
+  # EC2 Instance (CLI Host)
+  # ------------------------------------------------------------
+  CliHostInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      KeyName: !Ref KeyName
+      
+      IamInstanceProfile:
+        Fn::ImportValue: !Sub ${IamStackName}-CliHostInstanceProfileName
+      
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          GroupSet: 
+            - !Ref CliHostSecurityGroup
+          SubnetId: 
+            Fn::ImportValue: !Sub ${NetworkStackName}-PublicSubnetID
+            
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-cli-host
+
+Outputs:
+  CliHostPublicDNS:
+    Description: Public DNS of the CLI Host
+    Value: !GetAtt CliHostInstance.PublicDnsName
+    Export:
+      Name: !Sub ${AWS::StackName}-CliHostPublicDNS
+
+  CliHostPublicIP:
+    Description: Public IP of the CLI Host
+    Value: !GetAtt CliHostInstance.PublicIp
+    Export:
+      Name: !Sub ${AWS::StackName}-CliHostPublicIP

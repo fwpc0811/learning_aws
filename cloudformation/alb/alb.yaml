@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Application Load Balancer (ALB) and associated resources.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: learning-aws
+    Description: Project name prefix.
+
+  NetworkStackName:
+    Type: String
+    Default: learning-aws-vpc-stack
+    Description: Name of the network stack to import values from.
+
+Resources:
+  # ------------------------------------------------------------
+  # Security Group for ALB
+  # ------------------------------------------------------------
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to ALB
+      VpcId:
+        Fn::ImportValue: !Sub ${NetworkStackName}-VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-alb-sg
+
+  # ------------------------------------------------------------
+  # Application Load Balancer
+  # ------------------------------------------------------------
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ProjectName}-alb
+      Subnets:
+        - Fn::ImportValue: !Sub ${NetworkStackName}-PublicSubnetID
+        # Using PrivateSubnet2 to satisfy the 2-AZ requirement.
+        # Note: In a production environment, you should create a second Public Subnet.
+        - Fn::ImportValue: !Sub ${NetworkStackName}-PrivateSubnet2ID
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-alb
+
+  # ------------------------------------------------------------
+  # Target Group
+  # ------------------------------------------------------------
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-tg
+      VpcId:
+        Fn::ImportValue: !Sub ${NetworkStackName}-VPCID
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-tg
+
+  # ------------------------------------------------------------
+  # Listener (HTTP:80)
+  # ------------------------------------------------------------
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  ALBArn:
+    Description: The ARN of the Application Load Balancer
+    Value: !Ref ALB
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBArn
+      
+  ALBListenerArn:
+    Description: The ARN of the HTTP Listener
+    Value: !Ref HTTPListener
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBListenerArn
+
+  ALBTargetGroupArn:
+    Description: The ARN of the Target Group
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBTargetGroupArn
+
+  ALBSecurityGroupID:
+    Description: The Security Group ID for the ALB
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-ALBSecurityGroup
